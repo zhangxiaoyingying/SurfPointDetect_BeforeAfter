@@ -1,0 +1,290 @@
+/*****************************************************/
+/*              SiftTest图像定位测试程序            */
+/****************************************************/
+
+#include "stdafx.h"
+#include <stdio.h>
+#include <iostream>
+#include "opencv2/core/core.hpp"//因为在属性中已经配置了opencv等目录，所以把其当成了本地目录一样
+#include "opencv2/features2d/features2d.hpp"
+#include "opencv2/highgui/highgui.hpp"
+#include "opencv2/nonfree/nonfree.hpp" 
+#include "windows.h"
+#include "opencv2/legacy/legacy.hpp"
+#include <fstream>
+
+using namespace cv;
+using namespace std;
+
+//设置采样块的步长
+const int StepSize = 50;
+
+
+
+
+
+
+/************************************************************************/
+/*		test_at():测试遍历读取Mat矩阵元素                                                                     */
+/************************************************************************/
+void InitMat(Mat& m,float t)
+{
+	for(int i=0;i<m.rows;i++)
+		for(int j=0;j<m.cols;j++)
+			m.at<float>(i,j)=i+j;
+}
+void test_at()
+{
+	//Mat矩阵中的初始化，可以利用Mat：：at()来完成
+	///*			①数字测试，at遍历方式ok			*/
+	Mat M01(1000,1000,CV_32F);
+	InitMat(M01,3);
+
+	/*	②图像Mat测试，不行。	*/
+	Mat M0 = imread("C:\\Users\\ZY\\Desktop\\0103\\1_S.jpg");	//大图
+
+
+	/*		③描述子Mat测试，ok */
+	Mat img1 = imread("C:\\Users\\ZY\\Desktop\\0103\\1_S.jpg");	//大图
+
+	int minHessian=5000;
+	SurfFeatureDetector detector1(minHessian);
+	Ptr<DescriptorExtractor> descriptor_extractor = DescriptorExtractor::create("SURF");
+	Mat descriptors_M0;
+	//特征点检测			
+	vector <KeyPoint> m_LeftKey,m_LeftKey1;		//特征点
+	detector1.detect(img1,m_LeftKey);
+	descriptor_extractor->compute(img1,m_LeftKey,descriptors_M0);
+
+	ofstream outFile1,outFile2;//创建对象
+	outFile1.open("C:\\Users\\ZY\\Desktop\\0105\\descriptor1.txt");//打开文本
+
+	//使用at，遍历核心代码
+	for (int i=0;i<descriptors_M0.rows;i++)
+	{
+		outFile1<<descriptors_M0.row(i)<<endl;
+		for (int j=0;j<descriptors_M0.cols;j++)
+		{
+			outFile1<<descriptors_M0.at<float>(i,j)<<endl;		//这里的i和j分别表示行和列，注意不要搞反了
+		}
+	}
+	
+}
+
+/************************************************************************/
+/*		测试程序：从txt读入一行数据到数组                                                        */
+/************************************************************************/
+int main2()
+{
+	int x[5],y[5];
+	int i;
+	FILE *fp;
+	fp=fopen("C:\\Users\\ZY\\Desktop\\0103\\0106.txt","r");
+	for (i=0;i<5;i++) fscanf(fp,"%d",&x[i]);
+	for (i=0;i<5;i++) fscanf(fp,"%d",&y[i]);
+	fclose(fp);
+	for (i=0;i<5;i++) cout << x[i] << " ";
+	cout <<endl;
+	for (i=0;i<5;i++) cout << y[i] << " ";
+	cout <<endl;
+	return 0;
+}
+
+/************************************************************************/
+/*		判断txt共有多少行——方法1                                                                     */
+/************************************************************************/
+int CountLines(const char *filename)
+{
+	ifstream ReadFile;
+	int n=0;
+	string tmp;
+	ReadFile.open(filename,ios::in);//ios::in 表示以只读的方式读取文件
+	if(ReadFile.fail())//文件打开失败:返回0
+	{
+		return 0;
+	}
+	else//文件存在
+	{
+		while(getline(ReadFile,tmp,'\n'))
+		{
+			n++;
+		}
+		ReadFile.close();
+		return n;
+	}
+}
+
+/************************************************************************/
+/*		判断txt共有多少行——方法2                                                                     */
+/************************************************************************/
+int CountLines2(const char *filename)
+{
+	const int N =100;
+	char buf[N];
+	int count = 0;
+	FILE *fp = fopen(filename,"r");
+	if (fp == NULL)
+	{
+		cout<<"open falied"<<endl;
+		return -1;// -1;
+	}
+	while(fgets(buf,N,fp) != NULL)
+	{
+		if(buf[strlen(buf) - 1] == '\n')
+			count++;	//	count表示文件中数据的行数
+	}
+	return count;
+}
+
+int main()
+{
+	initModule_nonfree();
+	Mat img1B = imread("E:\\test_Match\\BIG_Small\\Small\\Image1\\1_5000.jpg");	//大图
+	Mat img2B = imread("E:\\test_Match\\BIG_Small\\Small\\Image1\\2.jpg");	//大图
+	//进行降采样操作
+	Mat img1,img2;
+	pyrDown(img1B, img1, Size(img1B.cols / 2, img1B.rows / 2));				//1/2降采样
+	pyrDown(img1, img1, Size(img1.cols / 2, img1.rows / 2));
+	pyrDown(img2B, img2, Size(img2B.cols / 2, img2B.rows / 2));				//1/2降采样
+	pyrDown(img2, img2, Size(img2.cols / 2, img2.rows / 2));
+
+	int minHessian=1000;
+	SurfFeatureDetector detector1(minHessian);
+	Ptr<DescriptorExtractor> descriptor_extractor = DescriptorExtractor::create("SURF");
+	Ptr<DescriptorMatcher> descriptor_matcher = DescriptorMatcher::create("BruteForce");//创建特征匹配器
+
+	//特征点检测			
+	vector <KeyPoint> m_LeftKey;		//特征点
+	Mat img_m_LeftKey;				//画出特征点的输出结果图像
+	Mat descriptors;
+
+	/*对图像做特征点检测和提取描述子时间*/
+	double t_after  =(double)cvGetTickCount(); //统计配准总时间
+
+	detector1.detect(img1,m_LeftKey);
+	descriptor_extractor->compute(img1,m_LeftKey,descriptors);
+
+	t_after =(double)(cvGetTickCount()-t_after)/(cvGetTickFrequency()*1000*1000.);
+
+	cout<<"特征点数量："<<descriptors.rows<<endl;
+	cout<<m_LeftKey.size()<<endl;
+	cout<<"对照组t_after时间："<<t_after<<endl;
+
+	/*将数据导入到txt中*/
+	ofstream outfile;
+	//设置输出文件的保存目录
+	outfile.open("C:\\Users\\ZY\\Desktop\\0103\\Descriptors.txt");
+
+
+	for (int i=0;i<descriptors.rows;i++)
+	{
+		outfile<<m_LeftKey[i].pt.x<<"\t";
+		outfile<<m_LeftKey[i].pt.y<<"\t";
+		outfile<<m_LeftKey[i].size<<"\t";
+		outfile<<m_LeftKey[i].angle<<"\t";
+		outfile<<m_LeftKey[i].response<<"\t";
+		outfile<<m_LeftKey[i].octave<<"\t";
+
+		for (int j=0;j<descriptors.cols;j++)
+		{
+			outfile<<descriptors.at<float>(i,j)<<"\t";	
+		}	
+		outfile<<"\n";
+	}
+	outfile.close();
+
+	
+	//读取保存好的描述子，并统计时间
+	/*打开文件*/
+	double t_before  =(double)cvGetTickCount(); //统计配准总时间
+	ifstream infile;	//输入流
+	const int N =100;
+	char buf[N];
+	string path="C:\\Users\\ZY\\Desktop\\0103\\Descriptors.txt";
+	const char* r_DataPath = path.c_str();
+	int count =CountLines2(r_DataPath);			//统计共有多少行
+//	cout<<count<<endl;		
+	//按行读取txt中的数据，并保存在数组中，再读入相应数据结构中
+	double x[70];		//KeyPoint6个+ 64维描述子
+	KeyPoint Kp;
+	vector <KeyPoint> m_LeftKey2;
+	Mat descriptors2;
+	
+	FILE *fp2 = fopen(r_DataPath,"r");
+
+	while (count--)
+	{
+		for (int i=0;i<70;i++) 
+		{
+			fscanf(fp2,"%lf",&x[i]);
+		}
+			int k=0;
+			Kp.pt.x = x[k];
+			Kp.pt.y = x[k+1];
+			Kp.size = x[k+2];
+			Kp.angle = x[k+3];
+			Kp.response = x[k+4];
+			Kp.octave = x[k+5];
+			m_LeftKey2.push_back(Kp);
+		
+			double ds[64];
+			for (int n=6;n<70;n++)
+			{
+				ds[n-6] = x[n];
+			}
+			Mat Descr2=Mat(1,64,CV_32FC1,ds);
+			
+			descriptors2.push_back(Descr2);			//descriptors2:从已经保存好的数据中提取的描述子
+	}
+		t_before =(double)(cvGetTickCount()-t_before)/(cvGetTickFrequency()*1000*1000.);
+
+		cout<<"实验组t_before时间："<<t_before<<endl;
+
+	cout<<m_LeftKey.size()<<","<<m_LeftKey2.size()<<endl;
+
+
+		cout<<m_LeftKey2.size()<<endl;
+
+		ofstream outFile2("C:\\Users\\ZY\\Desktop\\0103\\Descriptors2.txt");
+
+		for (int i=0;i< descriptors2.rows;i++)
+		{
+
+			outFile2<<descriptors2.row(i);
+			outFile2<<"\n";
+		}
+
+		cout<<descriptors2.rows<<endl;
+
+
+	
+		//对小图操作	
+		vector <KeyPoint> m_RightKey;		//特征点
+		Mat img_m_RightKey;				//画出特征点的输出结果图像
+		Mat descriptorsRight;
+		detector1.detect(img2,m_RightKey);
+		descriptor_extractor->compute(img2,m_RightKey,descriptorsRight);
+		
+		vector<DMatch> matches1,matches2;//匹配结果，DMatch是一个结构体
+		descriptor_matcher->match(descriptorsRight,descriptors,matches1);//匹配两个图像的特征矩阵
+		descriptor_matcher->match(descriptorsRight,descriptors2,matches2);//匹配两个图像的特征矩阵
+
+		////绘制匹配线段
+		Mat img_matches1,img_matches2;
+		drawMatches(img2,m_RightKey,img1,m_LeftKey,matches1,img_matches1);//将匹配出来的结果放入内存img_matches
+		drawMatches(img2,m_RightKey,img1,m_LeftKey2,matches1,img_matches2);//将匹配出来的结果放入内存img_matches
+		//显示匹配线段
+		//显示匹配线段
+		imshow("surf_Matches1",img_matches1);//显示的标题为Matches
+		imshow("surf_Matches2",img_matches2);//显示的标题为Matches
+	fclose(fp2);
+    waitKey(0);
+	system("pause");
+
+	return 0;
+}
+
+
+
+
+
