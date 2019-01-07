@@ -272,7 +272,7 @@ int main()
 		////绘制匹配线段
 		Mat img_matches1,img_matches2;
 		drawMatches(img2,m_RightKey,img1,m_LeftKey,matches1,img_matches1);//将匹配出来的结果放入内存img_matches
-		drawMatches(img2,m_RightKey,img1,m_LeftKey2,matches1,img_matches2);//将匹配出来的结果放入内存img_matches
+		drawMatches(img2,m_RightKey,img1,m_LeftKey2,matches2,img_matches2);//将匹配出来的结果放入内存img_matches
 		//显示匹配线段
 		//显示匹配线段
 		imshow("surf_Matches1",img_matches1);//显示的标题为Matches
