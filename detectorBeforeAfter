@@ -227,12 +227,12 @@ int main()
 			Kp.octave = x[k+5];
 			m_LeftKey2.push_back(Kp);
 		
-			double ds[64];
-			for (int n=6;n<70;n++)
-			{
-				ds[n-6] = x[n];
-			}
-			Mat Descr2=Mat(1,64,CV_32FC1,ds);
+			float ds[64];
+		for (int n=6;n<=70;n++)
+		{
+			ds[n-6] = x[n];
+		}
+		Mat Descr2=Mat(1,64,CV_32F,ds);	//之前写的这一句赋值不对！！解决：CV_32F对应float类型；CV_64F对应double类型
 			
 			descriptors2.push_back(Descr2);			//descriptors2:从已经保存好的数据中提取的描述子
 	}
@@ -271,14 +271,142 @@ int main()
 
 		////绘制匹配线段
 		Mat img_matches1,img_matches2;
-		drawMatches(img2,m_RightKey,img1,m_LeftKey,matches1,img_matches1);//将匹配出来的结果放入内存img_matches
-		drawMatches(img2,m_RightKey,img1,m_LeftKey2,matches2,img_matches2);//将匹配出来的结果放入内存img_matches
+		drawMatches(img2,m_RightKey,img1,m_LeftKey,matches1,img_matches1);//大图实时处理，img_matches1
+		drawMatches(img2,m_RightKey,img1,m_LeftKey2,matches2,img_matches2);//大图先验处理，img_matches2
 		//显示匹配线段
 		//显示匹配线段
 		imshow("surf_Matches1",img_matches1);//显示的标题为Matches
 		imshow("surf_Matches2",img_matches2);//显示的标题为Matches
+		
+		
+		//以下为精匹配过程
+		
+			double max_dist = 0;
+		double min_dist = 100;
+		for(int i=0;i<matches2.size();i++)
+		{
+			double dist = matches2[i].distance;
+			if(dist < min_dist) 
+				min_dist = dist;
+			if(dist > max_dist)
+				max_dist = dist;
+		}
+	
+		//设置阈值，筛选较好的匹配点  
+		vector<DMatch> goodMatches;
+		for(int i=0;i<matches2.size();i++)
+		{
+			if(matches2[i].distance < 0.5*max_dist)	//这里的阈值设置也是比较重要的
+		//	if( matches[i].distance <= max(2*min_dist, 0.02) )
+			{
+				goodMatches.push_back(matches2[i]);
+			}
+		}
+	
+		cout<<"goodMatches个数："<<goodMatches.size()<<endl;
+	
+	
+	
+	
+		//画出匹配结果
+		Mat img_matches;
+		//使用红色连接匹配的特征点对，绿色未匹配点对
+	
+		drawMatches(img2,m_RightKey,img1,m_LeftKey2,goodMatches,img_matches,
+				Scalar::all(-1),CV_RGB(0,255,0),Mat(),2);//最后一位是标志位，显示画圈的大小等
+		imshow("Match_surf",img_matches);
+	
+		double t_RANSAC =(double)cvGetTickCount();
+	
+		//RANSAC匹配过程
+		vector<DMatch> m_Matches = goodMatches;
+		//分配空间
+		int ptCount = m_Matches.size();//int ptCount = (int)m_Matches.size()不用这句里的强制转换试试
+		Mat p1(ptCount,2,CV_32F);//创建一个Mat结构，点数行，2列，32位浮点型
+		Mat p2(ptCount,2,CV_32F);
+	
+		//把得到的Keypoint转换为Mat
+		Point2f pt;
+		for(int i=0;i<m_Matches.size();i++)
+		{
+			pt = m_RightKey[m_Matches[i].queryIdx].pt;
+			p1.at<float>(i,0) = pt.x;//第一列表示x坐标；第二列表示y；//迭代器，at函数用来读取矩阵中的某个像素
+			p1.at<float>(i,1) = pt.y;
+			
+			
+			pt = m_LeftKey2[m_Matches[i].trainIdx].pt;
+			p2.at<float>(i,0) = pt.x;
+			p2.at<float>(i,1) = pt.y;
+		}
+	
+		//用RANSAC方法计算F
+		Mat m_Fundamental;//计算基本矩阵
+		vector<uchar> m_RANSACStatus;//该变量用来存储RANSAC之后，每个点的状态
+		findFundamentalMat(p1,p2,m_RANSACStatus,FM_RANSAC);//最后一位是标志位，表示使用RANSAC算法
+	
+		//计算野点个数
+		int OutlinerCount = 0;
+		for(int i=0;i<m_Matches.size();i++)
+		{
+			if(m_RANSACStatus[i] == 0)			//状态为0表示是野点
+			{
+				OutlinerCount++;
+			}
+		}
+		int InlinerCount = ptCount - OutlinerCount;
+		cout<<"内点个数为："<<InlinerCount<<endl;
+	
+		//创建3个变量用来保存内点和匹配关系
+		vector<Point2f> m_LeftInlier;
+		vector<Point2f> m_RightInlier;
+		vector<DMatch> m_InlierMatches;
+	
+		
+		m_LeftInlier.resize(InlinerCount  );		//调整容器的长度大小，使其能容纳n 个元素(为了防止有内存溢出问题，给每个结构大小多加10)
+		m_RightInlier.resize(InlinerCount  );
+		m_InlierMatches.resize(InlinerCount  );
+	
+		InlinerCount = 0;
+	//	float inlier_minRx =  img1.cols;	//存储内点中右图最小横坐标，便于后续融合 //可是这里为什么是img1??——相当于，将右图拼接紧挨左图
+		float inlier_minRx =  0;
+		
+		for(int i =0;i<ptCount;i++)
+		{
+			if(m_RANSACStatus[i] != 0)	//将正确匹配的点赋给内点
+			{
+				m_LeftInlier[InlinerCount].x = p1.at<float>(i,0);
+				m_LeftInlier[InlinerCount].y = p1.at<float>(i,1);
+				m_RightInlier[InlinerCount].x = p2.at<float>(i,0);
+				m_RightInlier[InlinerCount].y = p2.at<float>(i,1);
+				m_InlierMatches[InlinerCount].queryIdx = InlinerCount;
+				m_InlierMatches[InlinerCount].trainIdx = InlinerCount;
+	
+				if(m_RightInlier[InlinerCount].x < inlier_minRx)
+					inlier_minRx = m_RightInlier[InlinerCount].x;		//存储内点中右图的最小坐标
+				InlinerCount++;
+			}
+		}
+	
+		t_RANSAC =(double)(cvGetTickCount()-t_RANSAC)/(cvGetTickFrequency()*1000*1000.);
+		//	cout<<"RANSAC方法用时："<<t_RANSAC<<endl;
+	
+	
+		//将内点转换成drawMatches可以用的格式：m_InlierMatches转换成Keypoint
+		vector<KeyPoint> key1(InlinerCount);
+		vector<KeyPoint> key2(InlinerCount);
+		KeyPoint::convert(m_LeftInlier,key1);
+		KeyPoint::convert(m_RightInlier,key2);
+	
+		//显示计算F之后的内点匹配
+		Mat OutImage;
+		drawMatches(img2,key1,img1,key2,m_InlierMatches,OutImage);
+		//cvNamedWindow("match features",1);
+		imshow("基础矩阵匹配结果",OutImage);
+	
+
+		
 	fclose(fp2);
-    waitKey(0);
+   	waitKey(0);
 	system("pause");
 
 	return 0;
