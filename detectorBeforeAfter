@@ -236,7 +236,7 @@ int main()
 			m_LeftKey2.push_back(Kp);
 		
 			float ds[64];
-		for (int n=6;n<=70;n++)
+		for (int n=6;n<70;n++)
 		{
 			ds[n-6] = x[n];
 		}
